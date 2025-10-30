@@ -14,10 +14,10 @@ var connectionIdMiddleware websocket_manager.MiddlewareFunc = func(conn *websock
 	return websocket_manager.ConnectionWithContext(context.WithValue(conn.Context(), "connectionId", time.Now().String()), conn), nil
 }
 
-func getUsernameMiddleware(pool *ConnectionPool) websocket_manager.MiddlewareFunc {
+func getUsernameMiddleware(app *App) websocket_manager.MiddlewareFunc {
 	return func(conn *websocket_manager.Connection) (*websocket_manager.Connection, error) {
 		username := conn.Context().Value("username").(string)
-		if pool.Has(username) {
+		if app.UsernameExists(username) {
 			_ = conn.WriteControlClose(websocket.ClosePolicyViolation, websocket_manager.ControlMessage{
 				Code:    "USERNAME_ALREADY_TAKEN",
 				Message: "This username is already taken. Please choose another one.",

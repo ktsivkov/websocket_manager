@@ -31,18 +31,15 @@
     </div>
     <div class="row">
         <div class="col-md-4">
-            <select id="target" class="form-select form-select" aria-label="Large select example">
+            <select id="target" disabled="disabled" class="form-select form-select" aria-label="Large select example">
                 <option selected value="">Everyone</option>
-                <option value="1">One</option>
-                <option value="2">Two</option>
-                <option value="3">Three</option>
             </select>
         </div>
         <div class="col-md-8">
             <div class="input-group mb-3">
-                <input type="text" id="message" class="form-control" placeholder="Type your message"
+                <input type="text" disabled="disabled" id="message" class="form-control" placeholder="Type your message"
                        aria-label="Type your message" aria-describedby="message-label">
-                <button id="btn-send" type="button" class="btn btn-primary">Send</button>
+                <button id="btn-send" type="button" class="btn btn-primary" disabled="disabled" onclick="sendMessage()">Send</button>
             </div>
         </div>
     </div>
@@ -56,15 +53,43 @@
         const element = document.createElement("div");
         element.classList.add("alert","alert-success");
         element.setAttribute("role","alert");
-        element.innerText = `${username} joined the chat.`;
+        element.textContent = `${username} joined the chat.`;
         return element;
     }
     function disconnectedMessage(username) {
         const element = document.createElement("div");
         element.classList.add("alert","alert-warning");
         element.setAttribute("role","alert");
-        element.innerText = `${username} left the chat.`;
+        element.textContent = `${username} left the chat.`;
         return element;
+    }
+    function chatMessage(message) {
+        const header = document.createElement('h5');
+        header.classList.add('card-header');
+        header.textContent = 'Featured';
+
+        const title = document.createElement('h5');
+        title.classList.add('card-title');
+        title.textContent = `From: ${message.from}`;
+
+        const text = document.createElement('p');
+        text.classList.add('card-text');
+        text.textContent = message.message;
+
+        const body = document.createElement('div');
+        body.classList.add('card-body');
+        body.appendChild(title);
+        body.appendChild(text);
+
+        const card = document.createElement('div');
+        card.classList.add('card');
+        card.appendChild(header);
+        card.appendChild(body);
+        return card;
+    }
+    function renderInChat(element) {
+        document.getElementById("messages").appendChild(element);
+        window.scrollTo(0, document.body.scrollHeight);
     }
 
     function connect() {
@@ -78,26 +103,48 @@
             document.getElementById("btn-connect").classList.add("d-none");
             document.getElementById("btn-disconnect").classList.remove("d-none");
             document.getElementById("btn-send").removeAttribute("disabled");
-            document.getElementById("username").setAttribute("disabled", "disabled");
-            document.getElementById("messages").appendChild(connectedMessage(username));
+            document.getElementById("username").removeAttribute("disabled");
+            document.getElementById("message").removeAttribute("disabled");
+            document.getElementById("target").removeAttribute("disabled");
+            resetTargetInput();
         }
         window.ws.onmessage = function (event) {
-            event.data = JSON.parse(event.data);
-
             console.log(event);
+            const message = JSON.parse(event.data);
+            switch (message.type) {
+                case "user_connected":
+                    renderInChat(connectedMessage(message.data));
+                    return
+                case "user_disconnected":
+                    renderInChat(disconnectedMessage(message.data));
+                    return
+                case "chat":
+                    renderInChat(chatMessage(message.data));
+                    return
+            }
         }
         window.ws.onerror = function (event) {
             console.log("Error:", event);
+            alert(`Error: ${event.data}`)
         }
-        window.ws.onclose = function (event) {
-            console.log("Close:", event);
-            const username = document.getElementById("username").value;
+        window.ws.onclose = function () {
             document.getElementById("btn-connect").classList.remove("d-none");
             document.getElementById("btn-disconnect").classList.add("d-none");
             document.getElementById("btn-send").setAttribute("disabled", "disabled");
-            document.getElementById("username").removeAttribute("disabled");
-            document.getElementById("messages").appendChild(disconnectedMessage(username));
+            document.getElementById("username").setAttribute("disabled", "disabled");
+            document.getElementById("message").setAttribute("disabled", "disabled");
+            document.getElementById("target").setAttribute("disabled", "disabled");
+            resetTargetInput();
         }
+    }
+
+    function resetTargetInput() {
+        document.getElementById("target").innerHTML = "";
+        const option = document.createElement("option");
+        option.innerText = "Everyone";
+        option.value = "";
+        option.setAttribute("selected", "selected");
+        document.getElementById("target").appendChild(option);
     }
 
     function sendMessage() {

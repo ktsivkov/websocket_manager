@@ -13,8 +13,8 @@ func newWorker(conn *Connection, conf Config) *Worker {
 	return &Worker{
 		ctx: wCtx,
 		cancel: func() {
-			if conf.OnDisconnect != nil && wCtx.Err() == nil {
-				conf.OnDisconnect.On(wCtx)
+			if wCtx.Err() == nil { // Ensure it is called only the first time.
+				conf.ConnectionHandler.OnDisconnect(wCtx)
 			}
 			cancel()
 		},
@@ -31,9 +31,7 @@ type Worker struct {
 }
 
 func (w *Worker) Run() error {
-	if w.conf.OnConnect != nil && w.ctx.Err() == nil {
-		go w.conf.OnConnect.On(w.ctx)
-	}
+	go w.conf.ConnectionHandler.OnConnect(w.ctx)
 	go w.handlePingPong()
 	go w.readMessages()
 	go w.writeMessages()
@@ -72,7 +70,8 @@ func (w *Worker) writeMessages() {
 	writeCh := make(chan []byte)
 	go func() {
 		defer w.cancel()
-		if err := w.conf.MessageWriter.Write(w.ctx, writeCh); err != nil {
+
+		if err := w.conf.ConnectionHandler.MessageWriter(w.ctx, writeCh); err != nil {
 			w.conf.Logger.ErrorContext(w.ctx, "message writer failed", "error", err)
 		}
 	}()
@@ -115,7 +114,7 @@ func (w *Worker) readMessages() {
 
 		w.conf.Logger.DebugContext(w.ctx, "message received", "payload", string(payload))
 		go func() {
-			if err := w.conf.MessageReader.Read(w.ctx, payload); err != nil {
+			if err := w.conf.ConnectionHandler.OnMessage(w.ctx, payload); err != nil {
 				w.conf.Logger.ErrorContext(w.ctx, "message reader failed", "error", err)
 				w.cancel()
 			}

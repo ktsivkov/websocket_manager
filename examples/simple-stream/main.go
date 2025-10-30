@@ -20,25 +20,17 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
 
-	pool := &ConnectionPool{}
-	defer pool.UnregisterAll()
+	app := NewApp(logger)
 	manager := websocket_manager.New(ctx, websocket_manager.Config{
 		WriteControlTimeout: 5 * time.Second,
 		PingFrequency:       5 * time.Second,
 		PingTimeout:         5 * time.Second,
 		PongTimeout:         10 * time.Second,
-		MessageWriter:       getMessageWriter(logger, pool),
-		MessageReader:       getMessageReader(logger, pool),
+		ConnectionHandler:   app,
 		Upgrader:            &websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 		Logger:              logger,
-		Middlewares:         []websocket_manager.Middleware{connectionIdMiddleware, getUsernameMiddleware(pool)},
+		Middlewares:         []websocket_manager.Middleware{connectionIdMiddleware, getUsernameMiddleware(app)},
 		ResponseHeader:      nil,
-		OnConnect: websocket_manager.ConnectionEventHandlerFunc(func(ctx context.Context) {
-			logger.InfoContext(ctx, "connected", "connectionId", ctx.Value("connectionId").(string))
-		}),
-		OnDisconnect: websocket_manager.ConnectionEventHandlerFunc(func(ctx context.Context) {
-			logger.InfoContext(ctx, "disconnected", "connectionId", ctx.Value("connectionId").(string))
-		}),
 	})
 
 	mux := http.NewServeMux()

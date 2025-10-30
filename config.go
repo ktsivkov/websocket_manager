@@ -14,10 +14,6 @@ type Config struct {
 	PingTimeout time.Duration
 	// PongTimeout How long to wait for a pong message to be sent to a client before timing out.
 	PongTimeout time.Duration
-	// MessageWriter Sends messages to clients, if an error occurs, the connection is closed.
-	MessageWriter MessageWriter
-	// MessageReader Reads messages from clients, if an error occurs, the connection is closed..
-	MessageReader MessageReader
 	// Upgrader Upgrades the http connection to a websocket connection.
 	Upgrader Upgrader
 	Logger   Logger
@@ -25,8 +21,6 @@ type Config struct {
 	Middlewares []Middleware
 	// ResponseHeader Response header to be set on the websocket upgrade response.
 	ResponseHeader http.Header
-	// OnConnect runs when a client connects.
-	OnConnect ConnectionEventHandler
-	// OnDisconnect runs when a client disconnects.
-	OnDisconnect ConnectionEventHandler
+	// ConnectionHandler Handles the connection lifecycle.
+	ConnectionHandler ConnectionHandler
 }
