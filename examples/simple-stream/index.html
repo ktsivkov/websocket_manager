@@ -25,9 +25,7 @@
         </div>
     </div>
     <div class="row">
-        <div class="col-md-12">
-            <div id="messages" class="list-group"></div>
-        </div>
+        <div class="col-md-12" id="messages"></div>
     </div>
     <div class="row">
         <div class="col-md-4">
@@ -51,14 +49,14 @@
 <script>
     function connectedMessage(username) {
         const element = document.createElement("div");
-        element.classList.add("alert","alert-success");
+        element.classList.add("alert","alert-success", "m-3");
         element.setAttribute("role","alert");
         element.textContent = `${username} joined the chat.`;
         return element;
     }
     function disconnectedMessage(username) {
         const element = document.createElement("div");
-        element.classList.add("alert","alert-warning");
+        element.classList.add("alert","alert-warning", "m-3");
         element.setAttribute("role","alert");
         element.textContent = `${username} left the chat.`;
         return element;
@@ -66,11 +64,7 @@
     function chatMessage(message) {
         const header = document.createElement('h5');
         header.classList.add('card-header');
-        header.textContent = 'Featured';
-
-        const title = document.createElement('h5');
-        title.classList.add('card-title');
-        title.textContent = `From: ${message.from}`;
+        header.textContent = `From: ${message.from}`;
 
         const text = document.createElement('p');
         text.classList.add('card-text');
@@ -78,15 +72,15 @@
 
         const body = document.createElement('div');
         body.classList.add('card-body');
-        body.appendChild(title);
         body.appendChild(text);
 
         const card = document.createElement('div');
-        card.classList.add('card');
+        card.classList.add('card', 'm-3');
         card.appendChild(header);
         card.appendChild(body);
         return card;
     }
+
     function renderInChat(element) {
         document.getElementById("messages").appendChild(element);
         window.scrollTo(0, document.body.scrollHeight);
@@ -103,7 +97,7 @@
             document.getElementById("btn-connect").classList.add("d-none");
             document.getElementById("btn-disconnect").classList.remove("d-none");
             document.getElementById("btn-send").removeAttribute("disabled");
-            document.getElementById("username").removeAttribute("disabled");
+            document.getElementById("username").setAttribute("disabled", "disabled");
             document.getElementById("message").removeAttribute("disabled");
             document.getElementById("target").removeAttribute("disabled");
             resetTargetInput();
@@ -113,11 +107,16 @@
             const message = JSON.parse(event.data);
             switch (message.type) {
                 case "user_connected":
+                    renderTargetOptions([targetOption(message.data)]);
                     renderInChat(connectedMessage(message.data));
                     return
                 case "user_disconnected":
+                    removeTargetOptions(message.data)
                     renderInChat(disconnectedMessage(message.data));
                     return
+                case "client_list":
+                    renderTargetOptions(message.data.map(targetOption));
+                    return;
                 case "chat":
                     renderInChat(chatMessage(message.data));
                     return
@@ -127,15 +126,43 @@
             console.log("Error:", event);
             alert(`Error: ${event.data}`)
         }
-        window.ws.onclose = function () {
+        window.ws.onclose = function (event) {
             document.getElementById("btn-connect").classList.remove("d-none");
             document.getElementById("btn-disconnect").classList.add("d-none");
             document.getElementById("btn-send").setAttribute("disabled", "disabled");
-            document.getElementById("username").setAttribute("disabled", "disabled");
+            document.getElementById("username").removeAttribute("disabled");
             document.getElementById("message").setAttribute("disabled", "disabled");
             document.getElementById("target").setAttribute("disabled", "disabled");
             resetTargetInput();
+            switch (event.code) {
+                case 1008:
+                    const reason = JSON.parse(event.reason);
+                    alert(`Error: ${reason.message}`);
+                    return
+            }
         }
+    }
+
+    function renderTargetOptions(targetOptions) {
+        targetOptions.forEach(option => {
+            document.getElementById("target").appendChild(option);
+        });
+    }
+
+    function removeTargetOptions(username) {
+        const options = document.querySelectorAll("#target option");
+        options.forEach(option => {
+            if (option.getAttribute("value") === username) {
+                option.remove();
+            }
+        });
+    }
+
+    function targetOption(username) {
+        const option = document.createElement("option");
+        option.innerText = username;
+        option.setAttribute("value", username);
+        return option;
     }
 
     function resetTargetInput() {

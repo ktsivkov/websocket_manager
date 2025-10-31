@@ -31,62 +31,50 @@ type Worker struct {
 }
 
 func (w *Worker) Run() error {
-	go w.conf.ConnectionHandler.OnConnect(w.ctx)
-	go w.handlePingPong()
+	w.conf.ConnectionHandler.OnConnect(w.ctx)
 	go w.readMessages()
 	go w.writeMessages()
 	return w.waitForClose()
 }
 
-func (w *Worker) handlePingPong() {
+func (w *Worker) setupPingPongHandlers() {
 	_ = w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
 	w.conn.SetPongHandler(func(_ string) error {
 		w.conf.Logger.DebugContext(w.ctx, "pong received")
 		return w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
 	})
+}
 
-	ticker := time.NewTicker(w.conf.PingFrequency)
-	defer ticker.Stop()
+func (w *Worker) writeMessages() {
+	defer w.cancel()
 
-	w.conf.Logger.DebugContext(w.ctx, "pinger started", "conn", w.conn)
+	w.setupPingPongHandlers()
+	pingTicker := time.NewTicker(w.conf.PingFrequency)
+	defer pingTicker.Stop()
+
+	writeCh, err := w.conf.ConnectionHandler.MessageWriter(w.ctx)
+	if err != nil {
+		w.conf.Logger.ErrorContext(w.ctx, "message writer failed", "error", err)
+		return
+	}
+
 	for {
 		select {
 		case <-w.ctx.Done():
-			w.conf.Logger.DebugContext(w.ctx, "pinger stopped")
 			return
-
-		case <-ticker.C:
+		case <-pingTicker.C:
 			if err := w.conn.WriteControl(websocket.PingMessage, nil, w.conf.PingTimeout); err != nil {
 				w.conf.Logger.ErrorContext(w.ctx, "failed to write ping message", "error", err)
 				return
 			}
 			w.conf.Logger.DebugContext(w.ctx, "ping message sent")
-		}
-	}
-}
-
-func (w *Worker) writeMessages() {
-	defer w.cancel()
-	writeCh := make(chan []byte)
-	go func() {
-		defer w.cancel()
-
-		if err := w.conf.ConnectionHandler.MessageWriter(w.ctx, writeCh); err != nil {
-			w.conf.Logger.ErrorContext(w.ctx, "message writer failed", "error", err)
-		}
-	}()
-
-	for {
-		select {
-		case <-w.ctx.Done():
-			close(writeCh)
-			return
-		case payload, ok := <-writeCh:
-			if !ok {
-				return
-			}
+		case payload := <-writeCh:
 			if err := w.conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-				w.conf.Logger.ErrorContext(w.ctx, "failed to write payload", "error", err)
+				if errors.Is(err, ErrConnectionClosed) {
+					w.conf.Logger.WarnContext(w.ctx, "message writer failed to write payload due to closed connection", "error", err, "payload", string(payload))
+					return
+				}
+				w.conf.Logger.ErrorContext(w.ctx, "message writer failed to write payload", "error", err, "payload", string(payload))
 				return
 			}
 			w.conf.Logger.DebugContext(w.ctx, "message sent", "payload", string(payload))

@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"embed"
-	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -17,7 +15,7 @@ import (
 var indexFile embed.FS
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := Slog()
 	ctx := context.Background()
 
 	app := NewApp(logger)
@@ -43,19 +41,10 @@ func main() {
 			return
 		}
 
-		worker, err := manager.Upgrade(w, r, websocket_manager.ContextValue{Key: "username", Val: r.URL.Query().Get("username")})
-		if err != nil {
+		if err := manager.UpgradeAndRunAsync(w, r, websocket_manager.ContextValue{Key: "username", Val: r.URL.Query().Get("username")}); err != nil {
 			logger.ErrorContext(ctx, "failed to upgrade connection", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-
-		go func() { // Run the websocket worker in a goroutine to free allocated memory as soon as possible.
-			if err := worker.Run(); err != nil {
-				logger.ErrorContext(ctx, "worker failed", "error", err)
-				return
-			}
-		}()
 	}))
 
 	server := &http.Server{

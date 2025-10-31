@@ -57,6 +57,23 @@ func (m *WebsocketManager) Upgrade(w http.ResponseWriter, r *http.Request, conte
 	return newWorker(res, m.conf), nil
 }
 
+// UpgradeAndRunAsync upgrades the connection to a websocket and runs it in a goroutine.
+// See Upgrade and Worker.Run for more details.
+func (m *WebsocketManager) UpgradeAndRunAsync(w http.ResponseWriter, r *http.Request, contextValues ...ContextValue) error {
+	worker, err := m.Upgrade(w, r, contextValues...)
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		if err := worker.Run(); err != nil {
+			m.conf.Logger.ErrorContext(m.ctx, "worker failed", "error", err)
+		}
+	}()
+
+	return nil
+}
+
 func (m *WebsocketManager) Wait() {
 	m.wg.Wait()
 }

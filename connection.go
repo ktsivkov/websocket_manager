@@ -44,7 +44,6 @@ func (c *Connection) Close() error {
 }
 
 // ReadJSON see https://pkg.go.dev/github.com/gorilla/websocket#Conn.ReadJSON
-// timeout is the maximum time to wait for the read to complete.
 // Returns ErrConnectionClosed if the connection is closed.
 // Returns ErrTimeoutExceeded if the read timed out.
 func (c *Connection) ReadJSON(v interface{}) error {
@@ -75,16 +74,11 @@ func (c *Connection) ReadMessage() (int, []byte, error) {
 }
 
 // WriteJSON see https://pkg.go.dev/github.com/gorilla/websocket#Conn.WriteJSON
-// timeout is the maximum time to wait for the writing to complete.
 // Returns ErrConnectionClosed if the connection is closed.
-// Returns ErrTimeoutExceeded if the writing timed out.
 func (c *Connection) WriteJSON(v interface{}) error {
 	if err := c.Conn.WriteJSON(v); err != nil {
 		if isConnectionClosedError(err) {
 			return fmt.Errorf("%w: %w", ErrConnectionClosed, err)
-		}
-		if isTimeoutExceededError(err) {
-			return fmt.Errorf("%w: %w", ErrTimeoutExceeded, err)
 		}
 		return err
 	}
@@ -93,16 +87,11 @@ func (c *Connection) WriteJSON(v interface{}) error {
 }
 
 // WriteMessage see https://pkg.go.dev/github.com/gorilla/websocket#Conn.WriteMessage
-// timeout is the maximum time to wait for the writing to complete.
 // Returns ErrConnectionClosed if the connection is closed.
-// Returns ErrTimeoutExceeded if the writing timed out.
 func (c *Connection) WriteMessage(messageType int, data []byte) error {
 	if err := c.Conn.WriteMessage(messageType, data); err != nil {
 		if isConnectionClosedError(err) {
 			return fmt.Errorf("%w: %w", ErrConnectionClosed, err)
-		}
-		if isTimeoutExceededError(err) {
-			return fmt.Errorf("%w: %w", ErrTimeoutExceeded, err)
 		}
 		return err
 	}
@@ -111,16 +100,11 @@ func (c *Connection) WriteMessage(messageType int, data []byte) error {
 }
 
 // WritePreparedMessage see https://pkg.go.dev/github.com/gorilla/websocket#Conn.WritePreparedMessage
-// timeout is the maximum time to wait for the writing to complete.
 // Returns ErrConnectionClosed if the connection is closed.
-// Returns ErrTimeoutExceeded if the writing timed out.
 func (c *Connection) WritePreparedMessage(pm *websocket.PreparedMessage) error {
 	if err := c.Conn.WritePreparedMessage(pm); err != nil {
 		if isConnectionClosedError(err) {
 			return fmt.Errorf("%w: %w", ErrConnectionClosed, err)
-		}
-		if isTimeoutExceededError(err) {
-			return fmt.Errorf("%w: %w", ErrTimeoutExceeded, err)
 		}
 		return err
 	}

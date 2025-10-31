@@ -4,6 +4,7 @@ const (
 	TypeChat             = "chat"
 	TypeUserConnected    = "user_connected"
 	TypeUserDisconnected = "user_disconnected"
+	TypeClientList       = "client_list"
 )
 
 type MessageRequest struct {
