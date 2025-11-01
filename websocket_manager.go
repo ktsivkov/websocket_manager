@@ -4,21 +4,18 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sync"
 )
 
 func New(ctx context.Context, conf Config) *WebsocketManager {
 	return &WebsocketManager{
 		ctx:  ctx,
 		conf: conf,
-		wg:   &sync.WaitGroup{},
 	}
 }
 
 type WebsocketManager struct {
 	ctx  context.Context
 	conf Config
-	wg   *sync.WaitGroup
 }
 
 // Upgrade upgrades the connection to a websocket.
@@ -51,9 +48,6 @@ func (m *WebsocketManager) Upgrade(w http.ResponseWriter, r *http.Request, conte
 		res = newConn
 	}
 
-	m.wg.Add(1)
-	defer m.wg.Done()
-
 	return newWorker(res, m.conf), nil
 }
 
@@ -72,8 +66,4 @@ func (m *WebsocketManager) UpgradeAndRunAsync(w http.ResponseWriter, r *http.Req
 	}()
 
 	return nil
-}
-
-func (m *WebsocketManager) Wait() {
-	m.wg.Wait()
 }
