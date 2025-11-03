@@ -20,15 +20,14 @@ func main() {
 
 	app := NewApp(logger)
 	manager := websocket_manager.New(ctx, websocket_manager.Config{
-		WriteControlTimeout: 5 * time.Second,
-		PingFrequency:       5 * time.Second,
-		PingTimeout:         5 * time.Second,
-		PongTimeout:         10 * time.Second,
-		ConnectionHandler:   app,
-		Upgrader:            &websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
-		Logger:              logger,
-		Middlewares:         []websocket_manager.Middleware{connectionIdMiddleware, getUsernameMiddleware(app)},
-		ResponseHeader:      nil,
+		PingFrequency:     5 * time.Second,
+		PingTimeout:       5 * time.Second,
+		PongTimeout:       10 * time.Second,
+		ConnectionHandler: app,
+		Upgrader:          &websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		Logger:            logger,
+		Middlewares:       []websocket_manager.Middleware{connectionIdMiddleware, getUsernameMiddleware(app)},
+		ResponseHeader:    nil,
 	})
 
 	mux := http.NewServeMux()

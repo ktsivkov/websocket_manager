@@ -34,27 +34,37 @@ func (w *Worker) Run() error {
 	w.conf.ConnectionHandler.OnConnect(w.ctx)
 	go w.readMessages()
 	go w.writeMessages()
-	return w.waitForClose()
-}
 
-func (w *Worker) setupPingPongHandlers() {
-	_ = w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
-	w.conn.SetPongHandler(func(_ string) error {
-		w.conf.Logger.DebugContext(w.ctx, "pong received")
-		return w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
-	})
+	<-w.ctx.Done() // Wait for the context to be done.
+	err := w.conn.Close()
+	if err != nil {
+		w.conf.Logger.ErrorContext(w.ctx, "failed to close connection", "error", err)
+		return err
+	}
+
+	return nil
 }
 
 func (w *Worker) writeMessages() {
-	defer w.cancel()
+	defer w.cancel() // Close the connection on exit.
 
-	w.setupPingPongHandlers()
+	// Setup ping pong handlers.
+	_ = w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
+	w.conn.SetPongHandler(func(_ string) error {
+		return w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
+	})
 	pingTicker := time.NewTicker(w.conf.PingFrequency)
 	defer pingTicker.Stop()
+	pingMsg := &controlMessage{
+		typ:     websocket.PingMessage,
+		data:    nil,
+		timeout: w.conf.PingTimeout,
+	}
 
+	// Setup message writer.
 	writeCh, err := w.conf.ConnectionHandler.MessageWriter(w.ctx)
 	if err != nil {
-		w.conf.Logger.ErrorContext(w.ctx, "message writer failed", "error", err)
+		w.conf.Logger.ErrorContext(w.ctx, "failed to get message writer", "error", err)
 		return
 	}
 
@@ -63,28 +73,26 @@ func (w *Worker) writeMessages() {
 		case <-w.ctx.Done():
 			return
 		case <-pingTicker.C:
-			if err := w.conn.WriteControl(websocket.PingMessage, nil, w.conf.PingTimeout); err != nil {
+			if err := pingMsg.Write(w.conn); err != nil {
 				w.conf.Logger.ErrorContext(w.ctx, "failed to write ping message", "error", err)
 				return
 			}
-			w.conf.Logger.DebugContext(w.ctx, "ping message sent")
-		case payload := <-writeCh:
-			if err := w.conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-				if errors.Is(err, ErrConnectionClosed) {
-					w.conf.Logger.WarnContext(w.ctx, "message writer failed to write payload due to closed connection", "error", err, "payload", string(payload))
-					return
-				}
-				w.conf.Logger.ErrorContext(w.ctx, "message writer failed to write payload", "error", err, "payload", string(payload))
+		case payload, ok := <-writeCh:
+			if !ok {
 				return
 			}
-			w.conf.Logger.DebugContext(w.ctx, "message sent", "payload", string(payload))
+			if err := payload.Write(w.conn); err != nil {
+				w.conf.Logger.ErrorContext(w.ctx, "failed to write message", "error", err)
+				return
+			}
+			if payload.Type() == websocket.CloseMessage {
+				return
+			}
 		}
 	}
 }
 
 func (w *Worker) readMessages() {
-	defer w.cancel()
-
 	for {
 		_, payload, err := w.conn.ReadMessage()
 		if err != nil {
@@ -92,32 +100,10 @@ func (w *Worker) readMessages() {
 				return
 			}
 
-			w.conf.Logger.ErrorContext(w.ctx, "failed to read payload", "error", err)
-			if err := w.conn.WriteControlClose(websocket.ClosePolicyViolation, errMsgMalformed, w.conf.WriteControlTimeout); err != nil {
-				w.conf.Logger.ErrorContext(w.ctx, "failed to write control message", "error", err)
-				return
-			}
+			w.conf.Logger.ErrorContext(w.ctx, "failed to read message", "error", err)
 			return
 		}
 
-		w.conf.Logger.DebugContext(w.ctx, "message received", "payload", string(payload))
-		go func() {
-			if err := w.conf.ConnectionHandler.OnMessage(w.ctx, payload); err != nil {
-				w.conf.Logger.ErrorContext(w.ctx, "message reader failed", "error", err)
-				w.cancel()
-			}
-		}()
+		go w.conf.ConnectionHandler.OnMessage(w.ctx, payload)
 	}
-}
-
-func (w *Worker) waitForClose() error {
-	<-w.ctx.Done()
-
-	err := w.conn.Close()
-	if err != nil {
-		w.conf.Logger.ErrorContext(w.ctx, "failed to close connection", "error", err)
-		return err
-	}
-
-	return nil
 }

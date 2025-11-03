@@ -2,7 +2,6 @@ package websocket_manager
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -128,20 +127,6 @@ func (c *Connection) WriteControl(messageType int, data []byte, timeout time.Dur
 	}
 
 	return nil
-}
-
-// WriteControlClose see https://pkg.go.dev/github.com/gorilla/websocket#Conn.WriteControl
-// timeout is the maximum time to wait for the writing to complete.
-// Returns ErrFailedToMarshal if the payload could not be marshaled.
-// Returns ErrConnectionClosed if the connection is closed.
-// Returns ErrTimeoutExceeded if the writing timed out.
-func (c *Connection) WriteControlClose(status int, msg ControlMessage, timeout time.Duration) error {
-	payload, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrFailedToMarshal, err)
-	}
-
-	return c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(status, string(payload)), timeout)
 }
 
 func isConnectionClosedError(err error) bool {

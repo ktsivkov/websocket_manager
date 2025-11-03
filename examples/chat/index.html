@@ -127,6 +127,7 @@
             alert(`Error: ${event.data}`)
         }
         window.ws.onclose = function (event) {
+            console.log("Close:", event);
             document.getElementById("btn-connect").classList.remove("d-none");
             document.getElementById("btn-disconnect").classList.add("d-none");
             document.getElementById("btn-send").setAttribute("disabled", "disabled");
@@ -183,6 +184,7 @@
             "to": document.getElementById("target").value,
             "message": document.getElementById("message").value
         }))
+        // window.ws.send("ASDasddasdasasd")
     }
 
     function disconnect() {

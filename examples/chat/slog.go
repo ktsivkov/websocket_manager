@@ -36,7 +36,7 @@ type usernameSlogHandler struct {
 
 func (h *usernameSlogHandler) Handle(ctx context.Context, r slog.Record) error {
 	if val := getUsernameFromContext(ctx); val != "" {
-		r.AddAttrs(slog.Any("connectionId", val))
+		r.AddAttrs(slog.Any("username", val))
 	}
 
 	return h.Handler.Handle(ctx, r)

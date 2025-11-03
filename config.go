@@ -6,8 +6,6 @@ import (
 )
 
 type Config struct {
-	// WriteControlTimeout How long to wait for a Connection.WriteControl to complete before timing out.
-	WriteControlTimeout time.Duration
 	// PingFrequency How often to send ping messages to clients.
 	PingFrequency time.Duration
 	// PingTimeout How long to wait for a ping message from a client before timing out.

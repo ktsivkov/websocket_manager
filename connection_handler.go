@@ -9,9 +9,10 @@ type ConnectionHandler interface {
 	// OnDisconnect will be called at the end of the connection lifecycle.
 	OnDisconnect(ctx context.Context)
 	// OnMessage will be called in a separate goroutine, it is used to handle messages coming from the connection.
-	// If an error is returned, the connection will be closed.
-	OnMessage(ctx context.Context, payload []byte) error
+	OnMessage(ctx context.Context, payload []byte)
 	// MessageWriter should return a channel that will be used to send messages to the connection.
-	// If an error is returned, the connection will be closed.
-	MessageWriter(ctx context.Context) (<-chan []byte, error)
+	// If the channel is closed, the connection will be closed.
+	// If an error occurs, the connection will be closed.
+	// If the channel returns a Message with type gorilla/websocket.CloseMessage, the connection will be closed after writing the message.
+	MessageWriter(ctx context.Context) (<-chan Message, error)
 }
