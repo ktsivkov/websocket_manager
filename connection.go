@@ -44,14 +44,10 @@ func (c *Connection) Close() error {
 
 // ReadJSON see https://pkg.go.dev/github.com/gorilla/websocket#Conn.ReadJSON
 // Returns ErrConnectionClosed if the connection is closed.
-// Returns ErrTimeoutExceeded if the read timed out.
 func (c *Connection) ReadJSON(v interface{}) error {
 	if err := c.Conn.ReadJSON(v); err != nil {
 		if isConnectionClosedError(err) {
 			return fmt.Errorf("%w: %w", ErrConnectionClosed, err)
-		}
-		if isTimeoutExceededError(err) {
-			return fmt.Errorf("%w: %w", ErrTimeoutExceeded, err)
 		}
 		return err
 	}
@@ -130,7 +126,7 @@ func (c *Connection) WriteControl(messageType int, data []byte, timeout time.Dur
 }
 
 func isConnectionClosedError(err error) bool {
-	return errors.As(err, new(*websocket.CloseError))
+	return errors.As(err, new(*websocket.CloseError)) || errors.Is(err, net.ErrClosed)
 }
 
 func isTimeoutExceededError(err error) bool {

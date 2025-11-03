@@ -18,12 +18,14 @@ func NewApp(logger *slog.Logger) *App {
 	return &App{
 		logger: logger,
 		pool:   &sync.Map{},
+		wg:     &sync.WaitGroup{},
 	}
 }
 
 type App struct {
 	logger *slog.Logger
 	pool   *sync.Map
+	wg     *sync.WaitGroup
 }
 
 func (a *App) OnConnect(ctx context.Context) {
@@ -32,6 +34,7 @@ func (a *App) OnConnect(ctx context.Context) {
 	a.pool.Store(username, NewClient(ctx))
 	go a.provideActiveClients(ctx)
 	go a.notifyAllForConnection(ctx)
+	a.wg.Add(1)
 }
 
 func (a *App) OnDisconnect(ctx context.Context) {
@@ -43,6 +46,7 @@ func (a *App) OnDisconnect(ctx context.Context) {
 	}
 
 	go a.notifyAllForDisconnection(ctx)
+	a.wg.Done()
 }
 
 func (a *App) OnMessage(ctx context.Context, payload []byte) {
@@ -59,6 +63,11 @@ func (a *App) OnMessage(ctx context.Context, payload []byte) {
 	if err := json.Unmarshal(payload, &req); err != nil {
 		a.logger.ErrorContext(ctx, "failed to unmarshal message", "error", err, "payload", string(payload))
 		sourceClient.SendMessage(websocket_manager.CloseMessage(websocket.ClosePolicyViolation, "Bad message format.", 5*time.Second))
+		return
+	}
+
+	if req.Message == "/leave" {
+		a.leave(sourceClient)
 		return
 	}
 
@@ -99,6 +108,28 @@ func (a *App) MessageWriter(ctx context.Context) (<-chan websocket_manager.Messa
 	}
 
 	return client.WriteChannel(), nil
+}
+
+func (a *App) Shutdown(ctx context.Context) error {
+	ch := make(chan struct{}, 1)
+	go func() {
+		a.pool.Range(func(key, value interface{}) bool {
+			a.pool.Delete(key)
+			client := value.(*Client)
+			client.SendMessage(websocket_manager.CloseMessage(websocket.CloseServiceRestart, "Goodbye.", 5*time.Second))
+			client.Close()
+			return true
+		})
+		a.wg.Wait()
+		ch <- struct{}{}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-ch:
+		return nil
+	}
 }
 
 func (a *App) UsernameExists(username string) bool {
@@ -188,4 +219,8 @@ func (a *App) createWsMessage(msg Message) (websocket_manager.Message, error) {
 	}
 
 	return websocket_manager.TextMessage(string(payload))
+}
+
+func (a *App) leave(client *Client) {
+	client.SendMessage(websocket_manager.CloseMessage(websocket.CloseNormalClosure, "Goodbye.", 5*time.Second))
 }

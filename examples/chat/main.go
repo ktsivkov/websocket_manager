@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"embed"
+	"errors"
 	"net/http"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -17,6 +21,8 @@ var indexFile embed.FS
 func main() {
 	logger := Slog()
 	ctx := context.Background()
+	gCtx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 
 	app := NewApp(logger)
 	manager := websocket_manager.New(ctx, websocket_manager.Config{
@@ -25,9 +31,11 @@ func main() {
 		PongTimeout:       10 * time.Second,
 		ConnectionHandler: app,
 		Upgrader:          &websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
-		Logger:            logger,
-		Middlewares:       []websocket_manager.Middleware{connectionIdMiddleware, getUsernameMiddleware(app)},
-		ResponseHeader:    nil,
+		OnError: func(msg string, err error) {
+			logger.ErrorContext(ctx, msg, "error", err)
+		},
+		Middlewares:    []websocket_manager.Middleware{connectionIdMiddleware, getUsernameMiddleware(app)},
+		ResponseHeader: nil,
 	})
 
 	mux := http.NewServeMux()
@@ -50,7 +58,30 @@ func main() {
 		Addr:    ":8080",
 		Handler: mux,
 	}
-	if err := server.ListenAndServe(); err != nil {
-		logger.ErrorContext(ctx, "failed to start server", "error", err)
-	}
+	go func() {
+		logger.InfoContext(ctx, "starting server", "address", server.Addr)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.ErrorContext(ctx, "failed to start server", "error", err)
+		}
+	}()
+
+	<-gCtx.Done()
+
+	logger.InfoContext(ctx, "shutting down")
+
+	tCtx, tCancel := context.WithTimeout(ctx, 3*time.Second)
+	defer tCancel()
+
+	wg := &sync.WaitGroup{}
+	defer wg.Wait()
+	wg.Go(func() {
+		if err := server.Shutdown(tCtx); err != nil {
+			logger.ErrorContext(tCtx, "failed to shutdown http server", "error", err)
+		}
+	})
+	wg.Go(func() {
+		if err := app.Shutdown(tCtx); err != nil {
+			logger.ErrorContext(tCtx, "failed to shutdown app", "error", err)
+		}
+	})
 }

@@ -9,12 +9,12 @@ import (
 )
 
 func newWorker(conn *Connection, conf Config) *Worker {
-	wCtx, cancel := context.WithCancel(conn.Context())
+	ctx, cancel := context.WithCancel(conn.Context())
 	return &Worker{
-		ctx: wCtx,
+		ctx: ctx,
 		cancel: func() {
-			if wCtx.Err() == nil { // Ensure it is called only the first time.
-				conf.ConnectionHandler.OnDisconnect(wCtx)
+			if ctx.Err() == nil { // Ensure it is called only the first time.
+				conf.ConnectionHandler.OnDisconnect(ctx)
 			}
 			cancel()
 		},
@@ -38,7 +38,7 @@ func (w *Worker) Run() error {
 	<-w.ctx.Done() // Wait for the context to be done.
 	err := w.conn.Close()
 	if err != nil {
-		w.conf.Logger.ErrorContext(w.ctx, "failed to close connection", "error", err)
+		w.conf.OnError("failed to close connection", err)
 		return err
 	}
 
@@ -64,7 +64,7 @@ func (w *Worker) writeMessages() {
 	// Setup message writer.
 	writeCh, err := w.conf.ConnectionHandler.MessageWriter(w.ctx)
 	if err != nil {
-		w.conf.Logger.ErrorContext(w.ctx, "failed to get message writer", "error", err)
+		w.conf.OnError("failed to get message writer", err)
 		return
 	}
 
@@ -74,7 +74,7 @@ func (w *Worker) writeMessages() {
 			return
 		case <-pingTicker.C:
 			if err := pingMsg.Write(w.conn); err != nil {
-				w.conf.Logger.ErrorContext(w.ctx, "failed to write ping message", "error", err)
+				w.conf.OnError("failed to write ping message", err)
 				return
 			}
 		case payload, ok := <-writeCh:
@@ -82,7 +82,7 @@ func (w *Worker) writeMessages() {
 				return
 			}
 			if err := payload.Write(w.conn); err != nil {
-				w.conf.Logger.ErrorContext(w.ctx, "failed to write message", "error", err)
+				w.conf.OnError("failed to write message", err)
 				return
 			}
 			if payload.Type() == websocket.CloseMessage {
@@ -93,6 +93,8 @@ func (w *Worker) writeMessages() {
 }
 
 func (w *Worker) readMessages() {
+	defer w.cancel()
+
 	for {
 		_, payload, err := w.conn.ReadMessage()
 		if err != nil {
@@ -100,7 +102,7 @@ func (w *Worker) readMessages() {
 				return
 			}
 
-			w.conf.Logger.ErrorContext(w.ctx, "failed to read message", "error", err)
+			w.conf.OnError("failed to read message", err)
 			return
 		}
 

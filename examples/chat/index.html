@@ -93,7 +93,8 @@
             return
         }
         window.ws = new WebSocket(`ws://localhost:8080/ws?username=${username}`);
-        window.ws.onopen = function () {
+        window.ws.onopen = function (event) {
+            console.log("Open:", event);
             document.getElementById("btn-connect").classList.add("d-none");
             document.getElementById("btn-disconnect").classList.remove("d-none");
             document.getElementById("btn-send").removeAttribute("disabled");
@@ -103,7 +104,7 @@
             resetTargetInput();
         }
         window.ws.onmessage = function (event) {
-            console.log(event);
+            console.log("Message:", event);
             const message = JSON.parse(event.data);
             switch (message.type) {
                 case "user_connected":
@@ -123,7 +124,7 @@
             }
         }
         window.ws.onerror = function (event) {
-            console.log("Error:", event);
+            console.error("Error:", event);
             alert(`Error: ${event.data}`)
         }
         window.ws.onclose = function (event) {
@@ -184,7 +185,6 @@
             "to": document.getElementById("target").value,
             "message": document.getElementById("message").value
         }))
-        // window.ws.send("ASDasddasdasasd")
     }
 
     function disconnect() {

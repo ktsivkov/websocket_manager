@@ -14,7 +14,8 @@ type Config struct {
 	PongTimeout time.Duration
 	// Upgrader Upgrades the http connection to a websocket connection.
 	Upgrader Upgrader
-	Logger   Logger
+	// OnError Callback for errors.
+	OnError func(msg string, err error)
 	// Middlewares Execute before the ping-pong and message handlers.
 	Middlewares []Middleware
 	// ResponseHeader Response header to be set on the websocket upgrade response.

@@ -6,6 +6,9 @@ import (
 	"net/http"
 )
 
+// New creates a new WebsocketManager.
+// The spawned connections derive their context from the context passed to New.
+// It is best to use context.Background() for the context. And implement a graceful shutdown by sending a CloseMessage to the open connections.
 func New(ctx context.Context, conf Config) *WebsocketManager {
 	return &WebsocketManager{
 		ctx:  ctx,
@@ -61,7 +64,7 @@ func (m *WebsocketManager) UpgradeAndRunAsync(w http.ResponseWriter, r *http.Req
 
 	go func() {
 		if err := worker.Run(); err != nil {
-			m.conf.Logger.ErrorContext(m.ctx, "worker failed", "error", err)
+			m.conf.OnError("worker failed", err)
 		}
 	}()
 
