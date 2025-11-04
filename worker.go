@@ -1,54 +1,60 @@
 package websocket_manager
 
 import (
-	"context"
-	"errors"
+	"fmt"
 	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-func newWorker(conn *Connection, conf *Config) *Worker {
-	ctx, cancel := context.WithCancel(conn.Context())
+func newWorker(conn *websocket.Conn, client Socket, conf *Config) *Worker {
 	return &Worker{
-		ctx:    ctx,
-		cancel: cancel,
-		conn:   conn,
-		conf:   conf,
-		closed: &atomic.Bool{},
+		conn:    conn,
+		client:  client,
+		conf:    conf,
+		closed:  &atomic.Bool{},
+		hasRan:  &atomic.Bool{},
+		closeCh: make(chan error, 1),
 	}
 }
 
 type Worker struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	conn   *Connection
-	conf   *Config
-	closed *atomic.Bool
+	conn    *websocket.Conn
+	client  Socket
+	conf    *Config
+	closed  *atomic.Bool
+	hasRan  *atomic.Bool
+	closeCh chan error
 }
 
+// Run starts the worker.
+// Returns ErrWorkerAlreadyRun if the worker has already run.
+// Returns ErrPingMessage if it fails to write a ping message.
+// Returns ErrWriterChannelClosed if the WriterChannel of the Socket is closed.
+// Returns ErrFailedToWrite if it fails to write a message.
+// Returns ErrWriteTimeoutExceeded if the write timeout is exceeded.
+// Returns ErrCloseMessageSent if the Socket sends a CloseMessage through the WriterChannel.
+// Returns ErrCloseMessageReceived if the Socket receives a CloseMessage from the connection.
+// Returns ErrFailedToRead if it fails to read a message.
+// Returns ErrPongTimeoutExceeded if the pong timeout is exceeded.
+// Returns ErrConnectionClosed if the connection is closed.
+// Returns any error that occurs during the run.
 func (w *Worker) Run() error {
-	if w.closed.Load() {
-		return ErrWorkerAlreadyRan
+	if w.hasRan.Load() {
+		return ErrWorkerAlreadyRun
 	}
+	w.hasRan.Store(true)
 
-	w.conf.ConnectionHandler.OnConnect(w.ctx)
+	w.client.OnConnect()
 	go w.readMessages()
 	go w.writeMessages()
 
-	<-w.ctx.Done() // Wait for the context to be done.
-	if err := w.conn.Close(); err != nil {
-		w.conf.OnError("failed to close websocket connection", err)
-		return err
-	}
-
-	return nil
+	defer close(w.closeCh)
+	return <-w.closeCh
 }
 
 func (w *Worker) writeMessages() {
-	defer w.Close()
-
 	// Setup ping pong handlers.
 	_ = w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
 	w.conn.SetPongHandler(func(_ string) error {
@@ -63,30 +69,27 @@ func (w *Worker) writeMessages() {
 	}
 
 	// Setup message writer.
-	writeCh, err := w.conf.ConnectionHandler.MessageWriter(w.ctx)
-	if err != nil {
-		w.conf.OnError("failed to get message writer", err)
-		return
-	}
-
+	writerCh := w.client.WriterChannel()
 	for {
 		select {
-		case <-w.ctx.Done():
-			return
 		case <-pingTicker.C:
 			if err := pingMsg.Write(w.conn); err != nil {
-				w.conf.OnError("failed to write ping message", err)
+				w.Close(fmt.Errorf("%w: %w", ErrPingMessage, err), nil)
 				return
 			}
-		case payload, ok := <-writeCh:
+		case payload, ok := <-writerCh:
 			if !ok {
+				w.Close(ErrWriterChannelClosed, nil)
 				return
 			}
+
 			if err := payload.Write(w.conn); err != nil {
-				w.conf.OnError("failed to write message", err)
+				w.Close(fmt.Errorf("%w: %w", ErrFailedToWrite, err), nil)
 				return
 			}
+
 			if payload.Type() == websocket.CloseMessage {
+				w.Close(ErrCloseMessageSent, nil)
 				return
 			}
 		}
@@ -94,29 +97,43 @@ func (w *Worker) writeMessages() {
 }
 
 func (w *Worker) readMessages() {
-	defer w.Close()
-
 	for {
 		_, payload, err := w.conn.ReadMessage()
 		if err != nil {
-			if errors.Is(err, ErrConnectionClosed) {
+			if isConnectionClosedError(err) {
+				w.Close(fmt.Errorf("%w: %w", ErrConnectionClosed, err), nil)
+				return
+			}
+			if isTimeoutExceededError(err) { // At the moment, only pong timeout is supported; Therefore, it is safe to assume that it is a pong timeout.
+				w.Close(fmt.Errorf("%w: %w", ErrPongTimeoutExceeded, err), nil)
 				return
 			}
 
-			w.conf.OnError("failed to read message", err)
+			clientCloseMessage := clientCloseMessageFromError(err)
+			if clientCloseMessage != nil {
+				w.Close(ErrCloseMessageReceived, clientCloseMessage)
+				return
+			}
+
+			w.Close(fmt.Errorf("%w: %w", ErrFailedToRead, err), clientCloseMessage)
 			return
 		}
 
-		go w.conf.ConnectionHandler.OnMessage(w.ctx, payload)
+		go w.client.OnMessage(payload)
 	}
 }
 
-func (w *Worker) Close() {
+func (w *Worker) Close(cause error, clientCloseMessage *ClientCloseMessage) {
 	if w.closed.Load() {
 		return
 	}
 	w.closed.Store(true)
 
-	w.conf.ConnectionHandler.OnDisconnect(w.ctx)
-	w.cancel()
+	w.client.OnDisconnect(clientCloseMessage)
+
+	if err := w.conn.Close(); err != nil {
+		cause = fmt.Errorf("%w: %w", err, cause)
+	}
+
+	w.closeCh <- cause
 }

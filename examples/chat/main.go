@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"fmt"
 	"net/http"
 	"os/signal"
 	"sync"
@@ -24,23 +25,14 @@ func main() {
 	gCtx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	app := NewApp(logger)
-	manager := websocket_manager.New(ctx, websocket_manager.Config{
-		PingFrequency:     5 * time.Second,
-		PingTimeout:       5 * time.Second,
-		PongTimeout:       10 * time.Second,
-		ConnectionHandler: app,
-		Upgrader:          &websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
-		OnError: func(msg string, err error) {
-			logger.ErrorContext(ctx, msg, "error", err)
-		},
-		Middlewares:    []websocket_manager.Middleware{connectionIdMiddleware, getUsernameMiddleware(app)},
-		ResponseHeader: nil,
-	})
+	bus := NewBus()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFileFS(w, r, indexFile, "index.html")
+	})
+	mux.HandleFunc("/active", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(fmt.Sprintf("%d", bus.ActiveCount())))
 	})
 	mux.Handle("/ws", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Has("username") == false || r.URL.Query().Get("username") == "" {
@@ -48,10 +40,27 @@ func main() {
 			return
 		}
 
-		if err := manager.UpgradeAndRunAsync(w, r, websocket_manager.ContextValue{Key: "username", Val: r.URL.Query().Get("username")}); err != nil {
+		username := r.URL.Query().Get("username")
+
+		worker, err := websocket_manager.Upgrade(w, r, &websocket.Upgrader{CheckOrigin: func(r *http.Request) bool {
+			return true
+		}}, nil, websocket_manager.SocketCreatorFunc(func() (websocket_manager.Socket, error) {
+			return NewClient(context.WithValue(ctx, "username", username), logger, username, bus), nil
+		}), &websocket_manager.Config{
+			PingFrequency: 3 * time.Second,
+			PingTimeout:   3 * time.Second,
+			PongTimeout:   6 * time.Second,
+		})
+		if err != nil {
 			logger.ErrorContext(ctx, "failed to upgrade connection", "error", err)
 			return
 		}
+
+		go func() {
+			if err := worker.Run(); err != nil {
+				logger.ErrorContext(ctx, "websocket connection failed", "error", err)
+			}
+		}()
 	}))
 
 	server := &http.Server{
@@ -80,7 +89,7 @@ func main() {
 		}
 	})
 	wg.Go(func() {
-		if err := app.Shutdown(tCtx); err != nil {
+		if err := bus.Shutdown(tCtx); err != nil {
 			logger.ErrorContext(tCtx, "failed to shutdown app", "error", err)
 		}
 	})

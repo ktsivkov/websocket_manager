@@ -1,6 +1,8 @@
 package websocket_manager
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -9,8 +11,8 @@ import (
 type Message interface {
 	// Write writes to the connection.
 	// Returns ErrConnectionClosed if the connection is closed.
-	// Returns ErrTimeoutExceeded if the writing timed out.
-	Write(conn *Connection) error
+	// Returns ErrWriteTimeoutExceeded if the writing timed out.
+	Write(conn *websocket.Conn) error
 	Type() int
 }
 
@@ -43,8 +45,15 @@ type message struct {
 	typ int
 }
 
-func (m *message) Write(conn *Connection) error {
-	return conn.WritePreparedMessage(m.msg)
+func (m *message) Write(conn *websocket.Conn) error {
+	if err := conn.WritePreparedMessage(m.msg); err != nil {
+		if isConnectionClosedError(err) {
+			return fmt.Errorf("%w: %w", ErrConnectionClosed, err)
+		}
+		return err
+	}
+
+	return nil
 }
 
 func (m *message) Type() int {
@@ -72,6 +81,32 @@ func (m *controlMessage) Type() int {
 	return m.typ
 }
 
-func (m *controlMessage) Write(conn *Connection) error {
-	return conn.WriteControl(m.typ, m.data, m.timeout)
+func (m *controlMessage) Write(conn *websocket.Conn) error {
+	if err := conn.WriteControl(m.typ, m.data, time.Now().Add(m.timeout)); err != nil {
+		if isConnectionClosedError(err) {
+			return fmt.Errorf("%w: %w", ErrConnectionClosed, err)
+		}
+		if isTimeoutExceededError(err) {
+			return fmt.Errorf("%w: %w", ErrWriteTimeoutExceeded, err)
+		}
+		return err
+	}
+	return nil
+}
+
+type ClientCloseMessage struct {
+	Code int
+	Text string
+}
+
+func clientCloseMessageFromError(err error) *ClientCloseMessage {
+	val := &websocket.CloseError{}
+	if errors.As(err, &val) {
+		return &ClientCloseMessage{
+			Code: val.Code,
+			Text: val.Text,
+		}
+	}
+
+	return nil
 }
