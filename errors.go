@@ -8,4 +8,5 @@ var (
 	ErrAlreadyClosed        = errors.New("already closed")
 	ErrMiddlewareFailed     = errors.New("middleware failed")
 	ErrConnectionCloseError = errors.New("connection close error")
+	ErrWorkerAlreadyRan     = errors.New("worker has already ran")
 )

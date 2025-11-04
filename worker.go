@@ -3,6 +3,7 @@ package websocket_manager
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -11,15 +12,11 @@ import (
 func newWorker(conn *Connection, conf *Config) *Worker {
 	ctx, cancel := context.WithCancel(conn.Context())
 	return &Worker{
-		ctx: ctx,
-		cancel: func() {
-			if ctx.Err() == nil { // Ensure it is called only the first time.
-				conf.ConnectionHandler.OnDisconnect(ctx)
-			}
-			cancel()
-		},
-		conn: conn,
-		conf: conf,
+		ctx:    ctx,
+		cancel: cancel,
+		conn:   conn,
+		conf:   conf,
+		closed: &atomic.Bool{},
 	}
 }
 
@@ -28,17 +25,21 @@ type Worker struct {
 	cancel context.CancelFunc
 	conn   *Connection
 	conf   *Config
+	closed *atomic.Bool
 }
 
 func (w *Worker) Run() error {
+	if w.closed.Load() {
+		return ErrWorkerAlreadyRan
+	}
+
 	w.conf.ConnectionHandler.OnConnect(w.ctx)
 	go w.readMessages()
 	go w.writeMessages()
 
 	<-w.ctx.Done() // Wait for the context to be done.
-	err := w.conn.Close()
-	if err != nil {
-		w.conf.OnError("failed to close connection", err)
+	if err := w.conn.Close(); err != nil {
+		w.conf.OnError("failed to close websocket connection", err)
 		return err
 	}
 
@@ -46,7 +47,7 @@ func (w *Worker) Run() error {
 }
 
 func (w *Worker) writeMessages() {
-	defer w.cancel() // Close the connection on exit.
+	defer w.Close()
 
 	// Setup ping pong handlers.
 	_ = w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
@@ -93,7 +94,7 @@ func (w *Worker) writeMessages() {
 }
 
 func (w *Worker) readMessages() {
-	defer w.cancel()
+	defer w.Close()
 
 	for {
 		_, payload, err := w.conn.ReadMessage()
@@ -108,4 +109,14 @@ func (w *Worker) readMessages() {
 
 		go w.conf.ConnectionHandler.OnMessage(w.ctx, payload)
 	}
+}
+
+func (w *Worker) Close() {
+	if w.closed.Load() {
+		return
+	}
+	w.closed.Store(true)
+
+	w.conf.ConnectionHandler.OnDisconnect(w.ctx)
+	w.cancel()
 }
