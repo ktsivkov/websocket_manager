@@ -24,10 +24,10 @@ func NewClient(ctx context.Context, logger *slog.Logger, username string, bus *B
 
 type Client struct {
 	ctx          context.Context
-	username     string
 	logger       *slog.Logger
 	bus          *Bus
 	writeChannel chan websocket_manager.Message
+	username     string
 }
 
 func (c *Client) OnConnect() {

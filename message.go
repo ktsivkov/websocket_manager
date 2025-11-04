@@ -95,8 +95,8 @@ func (m *controlMessage) Write(conn *websocket.Conn) error {
 }
 
 type ClientCloseMessage struct {
-	Code int
 	Text string
+	Code int
 }
 
 func clientCloseMessageFromError(err error) *ClientCloseMessage {
