@@ -8,7 +8,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func newWorker(conn *Connection, conf Config) *Worker {
+func newWorker(conn *Connection, conf *Config) *Worker {
 	ctx, cancel := context.WithCancel(conn.Context())
 	return &Worker{
 		ctx: ctx,
@@ -27,7 +27,7 @@ type Worker struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	conn   *Connection
-	conf   Config
+	conf   *Config
 }
 
 func (w *Worker) Run() error {

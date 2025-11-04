@@ -39,8 +39,8 @@ func BinaryMessage(payload []byte) (Message, error) {
 }
 
 type message struct {
-	typ int
 	msg *websocket.PreparedMessage
+	typ int
 }
 
 func (m *message) Write(conn *Connection) error {
@@ -63,8 +63,8 @@ func CloseMessage(status int, payload string, timeout time.Duration) Message {
 }
 
 type controlMessage struct {
-	typ     int
 	data    []byte
+	typ     int
 	timeout time.Duration
 }
 

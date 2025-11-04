@@ -51,7 +51,7 @@ func (m *WebsocketManager) Upgrade(w http.ResponseWriter, r *http.Request, conte
 		res = newConn
 	}
 
-	return newWorker(res, m.conf), nil
+	return newWorker(res, &m.conf), nil
 }
 
 // UpgradeAndRunAsync upgrades the connection to a websocket and runs it in a goroutine.
