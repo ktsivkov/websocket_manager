@@ -19,6 +19,10 @@ import (
 //go:embed index.html
 var indexFile embed.FS
 
+var upgrader = &websocket.Upgrader{CheckOrigin: func(r *http.Request) bool {
+	return true
+}}
+
 func main() {
 	logger := Slog()
 	ctx := context.Background()
@@ -41,24 +45,24 @@ func main() {
 		}
 
 		username := r.URL.Query().Get("username")
-
-		worker, err := websocket_manager.Upgrade(w, r, &websocket.Upgrader{CheckOrigin: func(r *http.Request) bool {
-			return true
-		}}, nil, websocket_manager.SocketCreatorFunc(func() (websocket_manager.Socket, error) {
-			return NewClient(context.WithValue(ctx, "username", username), logger, username, bus), nil
-		}), &websocket_manager.Config{
-			PingFrequency: 3 * time.Second,
-			PingTimeout:   3 * time.Second,
-			PongTimeout:   6 * time.Second,
-		})
+		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to upgrade connection", "error", err)
 			return
 		}
 
 		go func() {
-			if err := worker.Run(); err != nil {
+			err := websocket_manager.Run(conn, websocket_manager.SocketCreatorFunc(func() (websocket_manager.Socket, error) {
+				return NewClient(context.WithValue(ctx, "username", username), logger, username, bus), nil
+			}), &websocket_manager.Config{
+				PingMessage:   websocket_manager.PingMessage(nil),
+				PingFrequency: 3 * time.Second,
+				PongTimeout:   7 * time.Second,
+				WriteTimeout:  3 * time.Second,
+			})
+			if err != nil {
 				logger.ErrorContext(ctx, "websocket connection failed", "error", err)
+				return
 			}
 		}()
 	}))

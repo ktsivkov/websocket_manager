@@ -6,16 +6,18 @@ import (
 )
 
 var (
-	ErrWriteTimeoutExceeded = errors.New("write timeout exceeded")
-	ErrPongTimeoutExceeded  = errors.New("pong timeout exceeded")
-	ErrWorkerAlreadyRun     = errors.New("worker has already run")
-	ErrWriterChannelClosed  = errors.New("writer channel closed")
-	ErrCloseMessageSent     = errors.New("close message sent")
-	ErrCloseMessageReceived = errors.New("close message received")
-	ErrPingMessage          = errors.New("failed to write ping message")
-	ErrFailedToWrite        = errors.New("failed to write")
-	ErrConnectionClosed     = errors.New("connection closed")
-	ErrFailedToRead         = errors.New("failed to read")
+	ErrConfigPartialPingConfiguration = errors.New("partial ping configuration")
+	ErrConfigBadPingFrequency         = errors.New("bad ping frequency")
+	ErrWriteTimeoutExceeded           = errors.New("write timeout exceeded")
+	ErrPongTimeoutExceeded            = errors.New("pong timeout exceeded")
+	ErrWorkerAlreadyRun               = errors.New("worker has already run")
+	ErrWriterChannelClosed            = errors.New("writer channel closed")
+	ErrCloseMessageSent               = errors.New("close message sent")
+	ErrCloseMessageReceived           = errors.New("close message received")
+	ErrPingMessage                    = errors.New("failed to write ping message")
+	ErrFailedToWrite                  = errors.New("failed to write")
+	ErrConnectionClosed               = errors.New("connection closed")
+	ErrFailedToRead                   = errors.New("failed to read")
 )
 
 func isConnectionClosedError(err error) bool {

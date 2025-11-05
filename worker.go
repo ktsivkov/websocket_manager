@@ -8,45 +8,23 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func newWorker(conn *websocket.Conn, client Socket, conf *Config) *Worker {
-	return &Worker{
-		conn:    conn,
-		client:  client,
-		conf:    conf,
-		closed:  &atomic.Bool{},
-		hasRan:  &atomic.Bool{},
-		closeCh: make(chan error, 1),
-	}
+type worker struct {
+	conn                 *websocket.Conn
+	socket               Socket
+	conf                 *Config
+	closed               *atomic.Bool
+	hasRan               *atomic.Bool
+	serverInitiatedClose *atomic.Bool
+	closeCh              chan error
 }
 
-type Worker struct {
-	conn    *websocket.Conn
-	client  Socket
-	conf    *Config
-	closed  *atomic.Bool
-	hasRan  *atomic.Bool
-	closeCh chan error
-}
-
-// Run starts the worker.
-// Returns ErrWorkerAlreadyRun if the worker has already run.
-// Returns ErrPingMessage if it fails to write a ping message.
-// Returns ErrWriterChannelClosed if the WriterChannel of the Socket is closed.
-// Returns ErrFailedToWrite if it fails to write a message.
-// Returns ErrWriteTimeoutExceeded if the write timeout is exceeded.
-// Returns ErrCloseMessageSent if the Socket sends a CloseMessage through the WriterChannel.
-// Returns ErrCloseMessageReceived if the Socket receives a CloseMessage from the connection.
-// Returns ErrFailedToRead if it fails to read a message.
-// Returns ErrPongTimeoutExceeded if the pong timeout is exceeded.
-// Returns ErrConnectionClosed if the connection is closed.
-// Returns any error that occurs during the run.
-func (w *Worker) Run() error {
+func (w *worker) run() error {
 	if w.hasRan.Load() {
 		return ErrWorkerAlreadyRun
 	}
 	w.hasRan.Store(true)
 
-	w.client.OnConnect()
+	w.socket.OnConnect()
 	go w.readMessages()
 	go w.writeMessages()
 
@@ -54,26 +32,25 @@ func (w *Worker) Run() error {
 	return <-w.closeCh
 }
 
-func (w *Worker) writeMessages() {
-	// Setup ping pong handlers.
-	_ = w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
-	w.conn.SetPongHandler(func(_ string) error {
-		return w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
-	})
-	pingTicker := time.NewTicker(w.conf.PingFrequency)
-	defer pingTicker.Stop()
-	pingMsg := &controlMessage{
-		typ:     websocket.PingMessage,
-		data:    nil,
-		timeout: w.conf.PingTimeout,
+func (w *worker) writeMessages() {
+	var pingTickerCh <-chan time.Time
+	if w.conf.isPingPongConfigured() {
+		// Setup ping pong handlers.
+		_ = w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
+		w.conn.SetPongHandler(func(_ string) error {
+			return w.conn.SetReadDeadline(time.Now().Add(w.conf.PongTimeout))
+		})
+		pingTicker := time.NewTicker(w.conf.PingFrequency)
+		defer pingTicker.Stop()
+		pingTickerCh = pingTicker.C
 	}
 
 	// Setup message writer.
-	writerCh := w.client.WriterChannel()
+	writerCh := w.socket.WriterChannel()
 	for {
 		select {
-		case <-pingTicker.C:
-			if err := pingMsg.Write(w.conn); err != nil {
+		case <-pingTickerCh:
+			if err := w.conf.PingMessage.Write(w.conn, w.conf.WriteTimeout); err != nil {
 				w.Close(fmt.Errorf("%w: %w", ErrPingMessage, err), nil)
 				return
 			}
@@ -83,20 +60,20 @@ func (w *Worker) writeMessages() {
 				return
 			}
 
-			if err := payload.Write(w.conn); err != nil {
+			if err := payload.Write(w.conn, w.conf.WriteTimeout); err != nil {
 				w.Close(fmt.Errorf("%w: %w", ErrFailedToWrite, err), nil)
 				return
 			}
 
 			if payload.Type() == websocket.CloseMessage {
-				w.Close(ErrCloseMessageSent, nil)
+				w.serverInitiatedClose.Store(true)
 				return
 			}
 		}
 	}
 }
 
-func (w *Worker) readMessages() {
+func (w *worker) readMessages() {
 	for {
 		_, payload, err := w.conn.ReadMessage()
 		if err != nil {
@@ -119,17 +96,20 @@ func (w *Worker) readMessages() {
 			return
 		}
 
-		go w.client.OnMessage(payload)
+		go w.socket.OnMessage(payload)
 	}
 }
 
-func (w *Worker) Close(cause error, clientCloseMessage *ClientCloseMessage) {
+func (w *worker) Close(cause error, clientCloseMessage *ClientCloseMessage) {
 	if w.closed.Load() {
 		return
 	}
 	w.closed.Store(true)
+	if w.serverInitiatedClose.Load() {
+		cause = fmt.Errorf("%w: %w", ErrCloseMessageSent, cause)
+	}
 
-	w.client.OnDisconnect(clientCloseMessage)
+	w.socket.OnDisconnect(clientCloseMessage)
 
 	if err := w.conn.Close(); err != nil {
 		cause = fmt.Errorf("%w: %w", err, cause)

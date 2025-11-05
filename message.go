@@ -12,32 +12,59 @@ type Message interface {
 	// Write writes to the connection.
 	// Returns ErrConnectionClosed if the connection is closed.
 	// Returns ErrWriteTimeoutExceeded if the writing timed out.
-	Write(conn *websocket.Conn) error
+	Write(conn *websocket.Conn, timeout time.Duration) error
 	Type() int
 }
 
-func TextMessage(payload string) (Message, error) {
+func TextMessage(payload string) Message {
 	msg, err := websocket.NewPreparedMessage(websocket.TextMessage, []byte(payload))
 	if err != nil {
-		return nil, err
+		panic(fmt.Errorf("failed to prepare text message: %w (%s)", err, payload))
 	}
 
 	return &message{
 		typ: websocket.TextMessage,
 		msg: msg,
-	}, nil
+	}
 }
 
-func BinaryMessage(payload []byte) (Message, error) {
+func BinaryMessage(payload []byte) Message {
 	msg, err := websocket.NewPreparedMessage(websocket.BinaryMessage, payload)
 	if err != nil {
-		return nil, err
+		panic(fmt.Errorf("failed to prepare binary message: %w (%s)", err, payload))
 	}
 
 	return &message{
 		typ: websocket.BinaryMessage,
 		msg: msg,
-	}, nil
+	}
+}
+
+func PingMessage(payload []byte) Message {
+	msg, err := websocket.NewPreparedMessage(websocket.PingMessage, payload)
+	if err != nil {
+		panic(fmt.Errorf("failed to prepare ping message: %w (%s)", err, payload))
+	}
+
+	return &message{
+		typ: websocket.PingMessage,
+		msg: msg,
+	}
+}
+
+// CloseMessage creates a new Message that writes a close message to the connection.
+// Check valid status codes at https://pkg.go.dev/github.com/gorilla/websocket#pkg-constants.
+// Panics if it cannot prepare the message.
+func CloseMessage(status int, payload string) Message {
+	msg, err := websocket.NewPreparedMessage(websocket.CloseMessage, websocket.FormatCloseMessage(status, payload))
+	if err != nil {
+		panic(fmt.Errorf("failed to prepare close message: %w (status=%d, payload=%s)", err, status, payload))
+	}
+
+	return &message{
+		typ: websocket.CloseMessage,
+		msg: msg,
+	}
 }
 
 type message struct {
@@ -45,10 +72,16 @@ type message struct {
 	typ int
 }
 
-func (m *message) Write(conn *websocket.Conn) error {
+func (m *message) Write(conn *websocket.Conn, timeout time.Duration) error {
+	if timeout > 0 {
+		_ = conn.SetWriteDeadline(time.Now().Add(timeout))
+	}
 	if err := conn.WritePreparedMessage(m.msg); err != nil {
 		if isConnectionClosedError(err) {
 			return fmt.Errorf("%w: %w", ErrConnectionClosed, err)
+		}
+		if isTimeoutExceededError(err) {
+			return fmt.Errorf("%w: %w", ErrWriteTimeoutExceeded, err)
 		}
 		return err
 	}
@@ -58,40 +91,6 @@ func (m *message) Write(conn *websocket.Conn) error {
 
 func (m *message) Type() int {
 	return m.typ
-}
-
-// CloseMessage creates a new Message that writes a close message to the connection.
-// Check valid status codes at https://pkg.go.dev/github.com/gorilla/websocket#pkg-constants.
-func CloseMessage(status int, payload string, timeout time.Duration) Message {
-	data := websocket.FormatCloseMessage(status, payload)
-	return &controlMessage{
-		typ:     websocket.CloseMessage,
-		data:    data,
-		timeout: timeout,
-	}
-}
-
-type controlMessage struct {
-	data    []byte
-	typ     int
-	timeout time.Duration
-}
-
-func (m *controlMessage) Type() int {
-	return m.typ
-}
-
-func (m *controlMessage) Write(conn *websocket.Conn) error {
-	if err := conn.WriteControl(m.typ, m.data, time.Now().Add(m.timeout)); err != nil {
-		if isConnectionClosedError(err) {
-			return fmt.Errorf("%w: %w", ErrConnectionClosed, err)
-		}
-		if isTimeoutExceededError(err) {
-			return fmt.Errorf("%w: %w", ErrWriteTimeoutExceeded, err)
-		}
-		return err
-	}
-	return nil
 }
 
 type ClientCloseMessage struct {

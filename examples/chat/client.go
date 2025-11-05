@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -44,7 +43,7 @@ func (c *Client) OnConnect() {
 		}
 
 		c.logger.ErrorContext(c.ctx, "failed to subscribe", "error", err)
-		c.SendMessage(websocket_manager.CloseMessage(websocket.ClosePolicyViolation, "Failed to join.", 5*time.Second))
+		c.SendMessage(websocket_manager.CloseMessage(websocket.ClosePolicyViolation, "Failed to join."))
 		return
 	}
 
@@ -76,7 +75,7 @@ func (c *Client) OnMessage(payload []byte) {
 	var req MessageRequest
 	if err := json.Unmarshal(payload, &req); err != nil {
 		c.logger.ErrorContext(c.ctx, "failed to unmarshal message", "error", err, "payload", string(payload))
-		c.SendMessage(websocket_manager.CloseMessage(websocket.ClosePolicyViolation, "Bad message format.", 5*time.Second))
+		c.SendMessage(websocket_manager.CloseMessage(websocket.ClosePolicyViolation, "Bad message format."))
 		return
 	}
 
@@ -88,16 +87,11 @@ func (c *Client) OnMessage(payload []byte) {
 	data, err := json.Marshal(Message{Type: TypeChat, Data: MessageResponse{From: c.Username(), Message: req.Message}})
 	if err != nil {
 		c.logger.ErrorContext(c.ctx, "failed to marshal message", "error", err, "payload", string(payload))
-		c.SendMessage(websocket_manager.CloseMessage(websocket.CloseInternalServerErr, "Internal server error.", 5*time.Second))
+		c.SendMessage(websocket_manager.CloseMessage(websocket.CloseInternalServerErr, "Internal server error."))
 		return
 	}
 
-	msg, err := websocket_manager.TextMessage(string(data))
-	if err != nil {
-		c.logger.ErrorContext(c.ctx, "failed to create message", "error", err, "payload", string(payload))
-		c.SendMessage(websocket_manager.CloseMessage(websocket.CloseInternalServerErr, "Internal server error.", 5*time.Second))
-		return
-	}
+	msg := websocket_manager.TextMessage(string(data))
 
 	switch req.To {
 	case "":
@@ -122,11 +116,11 @@ func (c *Client) SendMessage(msg websocket_manager.Message) {
 }
 
 func (c *Client) Kick() {
-	c.SendMessage(websocket_manager.CloseMessage(websocket.CloseNormalClosure, "Goodbye.", 5*time.Second))
+	c.SendMessage(websocket_manager.CloseMessage(websocket.CloseNormalClosure, "Goodbye."))
 }
 
 func (c *Client) NotifyShutdown() {
-	c.SendMessage(websocket_manager.CloseMessage(websocket.CloseServiceRestart, "Service is about to restart.", 5*time.Second))
+	c.SendMessage(websocket_manager.CloseMessage(websocket.CloseServiceRestart, "Service is about to restart."))
 }
 
 func (c *Client) Username() string {
@@ -173,7 +167,7 @@ func createWsMessage(msg Message) (websocket_manager.Message, error) {
 		return nil, err
 	}
 
-	return websocket_manager.TextMessage(string(payload))
+	return websocket_manager.TextMessage(string(payload)), nil
 }
 
 func createWsCloseMessage(msg ControlMessage) (websocket_manager.Message, error) {
@@ -182,5 +176,5 @@ func createWsCloseMessage(msg ControlMessage) (websocket_manager.Message, error)
 		return nil, err
 	}
 
-	return websocket_manager.CloseMessage(websocket.ClosePolicyViolation, string(payload), 5*time.Second), nil
+	return websocket_manager.CloseMessage(websocket.ClosePolicyViolation, string(payload)), nil
 }
