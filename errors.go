@@ -8,6 +8,7 @@ import (
 var (
 	ErrConfigPartialPingConfiguration = errors.New("partial ping configuration")
 	ErrConfigBadPingFrequency         = errors.New("bad ping frequency")
+	ErrConfigBadGracePeriod           = errors.New("bad grace period")
 	ErrWriteTimeoutExceeded           = errors.New("write timeout exceeded")
 	ErrPongTimeoutExceeded            = errors.New("pong timeout exceeded")
 	ErrWorkerAlreadyRun               = errors.New("worker has already run")

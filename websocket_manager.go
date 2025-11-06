@@ -20,6 +20,7 @@ import (
 // Returns ErrConnectionClosed if the connection is closed.
 // Returns ErrConfigPartialPingConfiguration if the ping configuration is incomplete.
 // Returns ErrConfigBadPingFrequency if the Config.PongTimeout is less or equal to Config.PingFrequency + Config.WriteTimeout.
+// Returns ErrConfigBadGracePeriod if the Config.GracePeriod is less or equal to 0
 // Returns any error that occurs during the run.
 func Run(
 	conn *websocket.Conn,
@@ -42,13 +43,13 @@ func Run(
 	}
 
 	w := &worker{
-		conn:                 conn,
-		socket:               socket,
-		conf:                 conf,
-		closed:               &atomic.Bool{},
-		hasRan:               &atomic.Bool{},
-		serverInitiatedClose: &atomic.Bool{},
-		closeCh:              make(chan error, 1),
+		conn:             conn,
+		socket:           socket,
+		conf:             conf,
+		closed:           &atomic.Bool{},
+		hasRan:           &atomic.Bool{},
+		closeMessageSent: &atomic.Bool{},
+		closeCh:          make(chan error, 1),
 	}
 
 	return w.run()

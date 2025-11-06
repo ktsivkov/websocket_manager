@@ -16,9 +16,11 @@ type Config struct {
 	PongTimeout time.Duration
 	// WriteTimeout How long to wait for a message to be written to a client before timing out.
 	WriteTimeout time.Duration
-	mu           sync.Mutex
-	validated    atomic.Bool
-	validErr     error
+	// GracePeriod How long to wait for a client to acknowledge a close message before closing the connection.
+	GracePeriod time.Duration
+	mu          sync.Mutex
+	validated   atomic.Bool
+	validErr    error
 }
 
 func (c *Config) isPingPongConfigured() bool {
@@ -35,10 +37,14 @@ func (c *Config) validate() error {
 				return c.validErr
 			}
 
-			if c.PongTimeout >= c.PingFrequency+c.WriteTimeout {
+			if c.PongTimeout <= c.PingFrequency+c.WriteTimeout {
 				c.validErr = ErrConfigBadPingFrequency
 				return c.validErr
 			}
+		}
+		if c.GracePeriod <= 0 {
+			c.validErr = ErrConfigBadGracePeriod
+			return c.validErr
 		}
 	}
 

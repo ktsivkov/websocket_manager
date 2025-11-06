@@ -9,13 +9,13 @@ import (
 )
 
 type worker struct {
-	conn                 *websocket.Conn
-	socket               Socket
-	conf                 *Config
-	closed               *atomic.Bool
-	hasRan               *atomic.Bool
-	serverInitiatedClose *atomic.Bool
-	closeCh              chan error
+	conn             *websocket.Conn
+	socket           Socket
+	conf             *Config
+	closed           *atomic.Bool
+	hasRan           *atomic.Bool
+	closeMessageSent *atomic.Bool
+	closeCh          chan error
 }
 
 func (w *worker) run() error {
@@ -66,7 +66,8 @@ func (w *worker) writeMessages() {
 			}
 
 			if payload.Type() == websocket.CloseMessage {
-				w.serverInitiatedClose.Store(true)
+				w.closeMessageSent.Store(true)
+				_ = w.conn.SetReadDeadline(time.Now().Add(w.conf.GracePeriod))
 				return
 			}
 		}
@@ -96,6 +97,10 @@ func (w *worker) readMessages() {
 			return
 		}
 
+		if w.closeMessageSent.Load() {
+			continue
+		}
+
 		go w.socket.OnMessage(payload)
 	}
 }
@@ -105,7 +110,7 @@ func (w *worker) Close(cause error, clientCloseMessage *ClientCloseMessage) {
 		return
 	}
 	w.closed.Store(true)
-	if w.serverInitiatedClose.Load() {
+	if w.closeMessageSent.Load() {
 		cause = fmt.Errorf("%w: %w", ErrCloseMessageSent, cause)
 	}
 

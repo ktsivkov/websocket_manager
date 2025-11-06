@@ -59,6 +59,7 @@ func main() {
 				PingFrequency: 3 * time.Second,
 				PongTimeout:   7 * time.Second,
 				WriteTimeout:  3 * time.Second,
+				GracePeriod:   5 * time.Second,
 			})
 			if err != nil {
 				logger.ErrorContext(ctx, "websocket connection failed", "error", err)
